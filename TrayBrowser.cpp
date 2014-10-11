@@ -5,10 +5,12 @@
 #include <stdlib.h>
 #include <Windows.h>
 #include <StrSafe.h>
+#include <ExDisp.h>
 #include "Resource.h"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "ole32.lib")
 
 const LPCWSTR TRAYBROWSER_NAME = L"TrayBrowser";
 const LPCWSTR TRAYBROWSER_WNDCLASS = L"TrayBrowserClass";
@@ -18,8 +20,33 @@ const UINT WM_NOTIFY_ICON = WM_USER+1;
 
 class TrayBrowser
 {
-public:
     int icon_id;
+    IWebBrowser2* pBrowser2;
+
+public:
+    TrayBrowser(int id) : icon_id(id) { } 
+    int getIconId() { return icon_id; }
+    void initialize();
+    void unInitialize();
+    void show() { }
+};
+
+void TrayBrowser::initialize()
+{
+    CoCreateInstance(CLSID_InternetExplorer, NULL, CLSCTX_LOCAL_SERVER,
+                     IID_IWebBrowser2, (void**)&pBrowser2);
+    if (pBrowser2 != NULL) {
+        pBrowser2->put_Visible(VARIANT_TRUE);
+    }
+}
+
+void TrayBrowser::unInitialize()
+{
+    if (pBrowser2) {
+        pBrowser2->Quit();
+        pBrowser2->Release();
+        pBrowser2 = NULL;
+    }
 };
 
 // logging
@@ -33,17 +60,17 @@ static LRESULT CALLBACK trayBrowserWndProc(
     WPARAM wParam,
     LPARAM lParam)
 {
-    fwprintf(stderr, L"msg: %x, hWnd=%p, wParam=%p\n", uMsg, hWnd, wParam);
+    //fwprintf(stderr, L"msg: %x, hWnd=%p, wParam=%p\n", uMsg, hWnd, wParam);
 
     switch (uMsg) {
     case WM_CREATE:
     {
         // Initialization.
 	CREATESTRUCT* cs = (CREATESTRUCT*)lParam;
-	TrayBrowser* browser = (TrayBrowser*)(cs->lpCreateParams);
-        if (browser != NULL) {
-            browser->icon_id = 1;
-	    SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)browser);
+	TrayBrowser* self = (TrayBrowser*)(cs->lpCreateParams);
+        if (self != NULL) {
+            self->initialize();
+	    SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)self);
 	    SendMessage(hWnd, WM_TASKBAR_CREATED, 0, 0);
         }
 	return FALSE;
@@ -53,13 +80,14 @@ static LRESULT CALLBACK trayBrowserWndProc(
     {
         // Clean up.
 	LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
-	TrayBrowser* browser = (TrayBrowser*)lp;
-        if (browser != NULL) {
+	TrayBrowser* self = (TrayBrowser*)lp;
+        if (self != NULL) {
+            self->unInitialize();
 	    // Unregister the icon.
 	    NOTIFYICONDATA nidata = {0};
 	    nidata.cbSize = sizeof(nidata);
 	    nidata.hWnd = hWnd;
-	    nidata.uID = browser->icon_id;
+	    nidata.uID = self->getIconId();
 	    Shell_NotifyIcon(NIM_DELETE, &nidata);
         }
 	PostQuitMessage(0);
@@ -70,7 +98,7 @@ static LRESULT CALLBACK trayBrowserWndProc(
     {
         // Command specified.
 	LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
-	TrayBrowser* browser = (TrayBrowser*)lp;
+	TrayBrowser* self = (TrayBrowser*)lp;
 	switch (LOWORD(wParam)) {
 	case IDM_OPEN:
 	    break;
@@ -101,6 +129,13 @@ static LRESULT CALLBACK trayBrowserWndProc(
             }
 	    break;
 	case WM_LBUTTONUP:
+            {
+                LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
+                TrayBrowser* self = (TrayBrowser*)lp;
+                if (self != NULL) {
+                    self->show();
+                }
+            }
 	    break;
 	case WM_RBUTTONUP:
 	    if (GetCursorPos(&pt)) {
@@ -119,13 +154,13 @@ static LRESULT CALLBACK trayBrowserWndProc(
     default:
         if (uMsg == WM_TASKBAR_CREATED) {
             LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
-            TrayBrowser* browser = (TrayBrowser*)lp;
-            if (browser != NULL) {
+            TrayBrowser* self = (TrayBrowser*)lp;
+            if (self != NULL) {
                 // Register the icon.
                 NOTIFYICONDATA nidata = {0};
                 nidata.cbSize = sizeof(nidata);
                 nidata.hWnd = hWnd;
-                nidata.uID = browser->icon_id;
+                nidata.uID = self->getIconId();
                 nidata.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
                 nidata.uCallbackMessage = WM_NOTIFY_ICON;
                 nidata.hIcon = (HICON)GetClassLongPtr(hWnd, GCLP_HICON);
@@ -161,7 +196,7 @@ int TrayBrowserMain(
 	ZeroMemory(&klass, sizeof(klass));
 	klass.lpfnWndProc = trayBrowserWndProc;
 	klass.hInstance = hInstance;
-	//klass.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_APPLICATION));
+	//klass.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_TRAYBROWSER));
         klass.hIcon = LoadIcon(NULL, MAKEINTRESOURCE(IDI_APPLICATION));
 	klass.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
         klass.lpszMenuName = MAKEINTRESOURCE(IDM_POPUPMENU);
@@ -172,26 +207,10 @@ int TrayBrowserMain(
     // Register the window message.
     WM_TASKBAR_CREATED = RegisterWindowMessage(TASKBAR_CREATED);
     
-#if 0
-    // Load the resources.
-    HICON_EMPTY = \
-        LoadIcon(hInstance, MAKEINTRESOURCE(IDI_CLIPEMPTY));
-    HICON_FILETYPE[FILETYPE_TEXT] = \
-        LoadIcon(hInstance, MAKEINTRESOURCE(IDI_CLIPTEXT));
-    HICON_FILETYPE[FILETYPE_BITMAP] = \
-        LoadIcon(hInstance, MAKEINTRESOURCE(IDI_CLIPBITMAP));
-    LoadString(hInstance, IDS_DEFAULT_CLIPPATH, 
-               DEFAULT_CLIPPATH, _countof(DEFAULT_CLIPPATH));
-    LoadString(hInstance, IDS_MESSAGE_WATCHING, 
-               MESSAGE_WATCHING, _countof(MESSAGE_WATCHING));
-    LoadString(hInstance, IDS_MESSAGE_UPDATED, 
-               MESSAGE_UPDATED, _countof(MESSAGE_UPDATED));
-    LoadString(hInstance, IDS_MESSAGE_BITMAP, 
-               MESSAGE_BITMAP, _countof(MESSAGE_BITMAP));
-#endif
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
     // Create a TrayBrowser object.
-    TrayBrowser* browser = new TrayBrowser();
+    TrayBrowser* browser = new TrayBrowser(1);
     
     // Create a SysTray window.
     HWND hWnd = CreateWindow(
@@ -222,6 +241,8 @@ int TrayBrowserMain(
 
     // Clean up.
     delete browser;
+
+    CoUninitialize();
 
     return (int)msg.wParam;
 }
