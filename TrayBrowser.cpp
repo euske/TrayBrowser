@@ -6,6 +6,7 @@
 #include <Windows.h>
 #include <StrSafe.h>
 #include <ExDisp.h>
+#include <Mshtmhst.h>
 #include "Resource.h"
 
 #pragma comment(lib, "user32.lib")
@@ -17,11 +18,17 @@ const LPCWSTR TRAYBROWSER_WNDCLASS = L"TrayBrowserClass";
 const LPCWSTR TASKBAR_CREATED = L"TaskbarCreated";
 static UINT WM_TASKBAR_CREATED;
 const UINT WM_NOTIFY_ICON = WM_USER+1;
+// logging
+static FILE* logfp = NULL;
 
+
+//  TrayBrowser
+//
 class TrayBrowser
 {
     int _iconId;
     IWebBrowser2* _browser2;
+    IDocHostShowUI* _showUI;
     HWND _hWnd;
 
 public:
@@ -38,14 +45,19 @@ void TrayBrowser::initialize(HWND hwnd)
 {
     _hWnd = hwnd;
     CoCreateInstance(CLSID_InternetExplorer, NULL, CLSCTX_LOCAL_SERVER,
-                     IID_IWebBrowser2, (void**)&_browser2);
+                          IID_IWebBrowser2, (void**)&_browser2);
     if (_browser2 != NULL) {
         _browser2->put_Visible(VARIANT_TRUE);
+        _browser2->QueryInterface(IID_IDocHostShowUI, (void**)&_showUI);
     }
 }
 
 void TrayBrowser::unInitialize()
 {
+    if (_showUI) {
+        _showUI->Release();
+        _showUI = NULL;
+    }
     if (_browser2) {
         _browser2->Quit();
         _browser2->Release();
@@ -76,9 +88,6 @@ void TrayBrowser::unregisterIcon()
     Shell_NotifyIcon(NIM_DELETE, &nidata);
 }
 
-
-// logging
-static FILE* logfp = NULL;
 
 //  trayBrowserWndProc
 //
@@ -233,7 +242,7 @@ int TrayBrowserMain(
 	CW_USEDEFAULT, CW_USEDEFAULT,
 	CW_USEDEFAULT, CW_USEDEFAULT,
 	NULL, NULL, hInstance, browser);
-    UpdateWindow(hWnd);
+    ShowWindow(hWnd, nCmdShow);
     {
         // Set the default item.
         HMENU menu = GetMenu(hWnd);
@@ -270,6 +279,7 @@ int WinMain(HINSTANCE hInstance,
 {
     int argc;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    _wfopen_s(&logfp, L"log.txt", L"a");
     return TrayBrowserMain(hInstance, hPrevInstance, nCmdShow, argc, argv);
 }
 #else
