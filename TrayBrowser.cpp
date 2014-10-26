@@ -20,34 +20,62 @@ const UINT WM_NOTIFY_ICON = WM_USER+1;
 
 class TrayBrowser
 {
-    int icon_id;
-    IWebBrowser2* pBrowser2;
+    int _iconId;
+    IWebBrowser2* _browser2;
+    HWND _hWnd;
 
 public:
-    TrayBrowser(int id) : icon_id(id) { } 
-    int getIconId() { return icon_id; }
-    void initialize();
+    TrayBrowser(int id) : _iconId(id) { } 
+    int getIconId() { return _iconId; }
+    void initialize(HWND hwnd);
     void unInitialize();
+    void registerIcon();
+    void unregisterIcon();
     void show() { }
 };
 
-void TrayBrowser::initialize()
+void TrayBrowser::initialize(HWND hwnd)
 {
+    _hWnd = hwnd;
     CoCreateInstance(CLSID_InternetExplorer, NULL, CLSCTX_LOCAL_SERVER,
-                     IID_IWebBrowser2, (void**)&pBrowser2);
-    if (pBrowser2 != NULL) {
-        pBrowser2->put_Visible(VARIANT_TRUE);
+                     IID_IWebBrowser2, (void**)&_browser2);
+    if (_browser2 != NULL) {
+        _browser2->put_Visible(VARIANT_TRUE);
     }
 }
 
 void TrayBrowser::unInitialize()
 {
-    if (pBrowser2) {
-        pBrowser2->Quit();
-        pBrowser2->Release();
-        pBrowser2 = NULL;
+    if (_browser2) {
+        _browser2->Quit();
+        _browser2->Release();
+        _browser2 = NULL;
     }
 };
+
+void TrayBrowser::registerIcon()
+{
+    NOTIFYICONDATA nidata = {0};
+    nidata.cbSize = sizeof(nidata);
+    nidata.hWnd = _hWnd;
+    nidata.uID = _iconId;
+    nidata.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nidata.uCallbackMessage = WM_NOTIFY_ICON;
+    nidata.hIcon = (HICON)GetClassLongPtr(_hWnd, GCLP_HICON);
+    StringCchPrintf(nidata.szTip, _countof(nidata.szTip), 
+                    L"%s", TRAYBROWSER_NAME);
+    Shell_NotifyIcon(NIM_ADD, &nidata);
+}
+
+void TrayBrowser::unregisterIcon()
+{
+    NOTIFYICONDATA nidata = {0};
+    nidata.cbSize = sizeof(nidata);
+    nidata.hWnd = _hWnd;
+    nidata.uID = _iconId;
+    Shell_NotifyIcon(NIM_DELETE, &nidata);
+}
+
 
 // logging
 static FILE* logfp = NULL;
@@ -60,7 +88,7 @@ static LRESULT CALLBACK trayBrowserWndProc(
     WPARAM wParam,
     LPARAM lParam)
 {
-    //fwprintf(stderr, L"msg: %x, hWnd=%p, wParam=%p\n", uMsg, hWnd, wParam);
+    //fwprintf(logfp, L"msg: %x, hWnd=%p, wParam=%p\n", uMsg, hWnd, wParam);
 
     switch (uMsg) {
     case WM_CREATE:
@@ -69,9 +97,9 @@ static LRESULT CALLBACK trayBrowserWndProc(
 	CREATESTRUCT* cs = (CREATESTRUCT*)lParam;
 	TrayBrowser* self = (TrayBrowser*)(cs->lpCreateParams);
         if (self != NULL) {
-            self->initialize();
 	    SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)self);
-	    SendMessage(hWnd, WM_TASKBAR_CREATED, 0, 0);
+            self->initialize(hWnd);
+            self->registerIcon();
         }
 	return FALSE;
     }
@@ -82,13 +110,8 @@ static LRESULT CALLBACK trayBrowserWndProc(
 	LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
 	TrayBrowser* self = (TrayBrowser*)lp;
         if (self != NULL) {
+            self->unregisterIcon();
             self->unInitialize();
-	    // Unregister the icon.
-	    NOTIFYICONDATA nidata = {0};
-	    nidata.cbSize = sizeof(nidata);
-	    nidata.hWnd = hWnd;
-	    nidata.uID = self->getIconId();
-	    Shell_NotifyIcon(NIM_DELETE, &nidata);
         }
 	PostQuitMessage(0);
 	return FALSE;
@@ -156,17 +179,7 @@ static LRESULT CALLBACK trayBrowserWndProc(
             LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
             TrayBrowser* self = (TrayBrowser*)lp;
             if (self != NULL) {
-                // Register the icon.
-                NOTIFYICONDATA nidata = {0};
-                nidata.cbSize = sizeof(nidata);
-                nidata.hWnd = hWnd;
-                nidata.uID = self->getIconId();
-                nidata.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-                nidata.uCallbackMessage = WM_NOTIFY_ICON;
-                nidata.hIcon = (HICON)GetClassLongPtr(hWnd, GCLP_HICON);
-                StringCchPrintf(nidata.szTip, _countof(nidata.szTip), 
-                                L"%s", TRAYBROWSER_NAME);
-                Shell_NotifyIcon(NIM_ADD, &nidata);
+                self->registerIcon();
             }
         }
 	return DefWindowProc(hWnd, uMsg, wParam, lParam);
