@@ -6,21 +6,76 @@
 #include <Windows.h>
 #include <StrSafe.h>
 #include <ExDisp.h>
+#include <OleAuto.h>
 #include <Mshtmhst.h>
 #include "Resource.h"
 #include "AXClientSite.h"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "oleaut32.lib")
 #pragma comment(lib, "ole32.lib")
 
 const LPCWSTR TRAYBROWSER_NAME = L"TrayBrowser";
 const LPCWSTR TRAYBROWSER_WNDCLASS = L"TrayBrowserClass";
 const LPCWSTR TASKBAR_CREATED = L"TaskbarCreated";
-static UINT WM_TASKBAR_CREATED;
+const UINT MAX_URL_CHARS = 1024;
 const UINT WM_NOTIFY_ICON = WM_USER+1;
-// logging
-static FILE* logfp = NULL;
+static UINT WM_TASKBAR_CREATED;
+static FILE* logfp = NULL;      // logging
+
+
+static INT_PTR CALLBACK showTextInputDialogProc(
+    HWND hWnd,
+    UINT uMsg,
+    WPARAM wParam,
+    LPARAM lParam)
+{
+    switch (uMsg) {
+    case WM_INITDIALOG:
+        SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)lParam);
+        {
+            WCHAR* text = (WCHAR*)lParam;
+            if (text != NULL) {
+                SetDlgItemText(hWnd, IDC_EDIT_URL, text);
+            }
+        }
+        return TRUE;
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case IDOK:
+            {
+                WCHAR* text = (WCHAR*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+                if (text != NULL) {
+                    UINT n = GetDlgItemText(hWnd, IDC_EDIT_URL, text, MAX_URL_CHARS-1);
+                    text[n] = L'\0';
+                }
+                EndDialog(hWnd, IDOK);
+            }
+            break;
+        case IDCANCEL:
+            EndDialog(hWnd, IDCANCEL);
+            break;
+        }
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+static WCHAR* showTextInputDialog(HWND hWnd, WCHAR* src)
+{
+    WCHAR* text = (WCHAR*)calloc(MAX_URL_CHARS, sizeof(WCHAR));
+    StringCchCopy(text, MAX_URL_CHARS, src);
+    LPARAM result = DialogBoxParam(
+        NULL, MAKEINTRESOURCE(IDD_TEXTINPUT),
+        hWnd, showTextInputDialogProc, (LPARAM)text);
+    if (result != IDOK) {
+        free(text);
+        return NULL;
+    }
+    return text;
+}
 
 
 //  TrayBrowser
@@ -35,21 +90,29 @@ class TrayBrowser
     IStorage* _storage;
     IOleObject* _ole;
     IWebBrowser2* _browser2;
+    void openURL();
 
 public:
-    TrayBrowser(int id, HMENU menu);
+    TrayBrowser(int id);
     void initialize(HWND hWnd, RECT* rect);
     void unInitialize();
     void registerIcon();
     void unregisterIcon();
     void resize(RECT* rect);
-    void handleUI(LPARAM lParam, POINT pt);
+    void handleIconUI(LPARAM lParam, POINT pt);
+    void doCommand(WPARAM wParam);
 };
 
-TrayBrowser::TrayBrowser(int id, HMENU menu)
+TrayBrowser::TrayBrowser(int id)
 {
     _iconId = id;
-    _hMenu = menu;
+    HMENU menu = LoadMenu(GetModuleHandle(NULL), MAKEINTRESOURCE(IDM_POPUPMENU));
+    if (menu != NULL) {
+        _hMenu = GetSubMenu(menu, 0);
+        if (_hMenu != NULL) {
+            SetMenuDefaultItem(_hMenu, IDM_OPEN, FALSE);
+        }
+    }
 }
 
 void TrayBrowser::initialize(HWND hWnd, RECT* rect)
@@ -90,10 +153,6 @@ void TrayBrowser::initialize(HWND hWnd, RECT* rect)
             IID_IWebBrowser2,
             (void**)&_browser2);
         if (logfp) fwprintf(logfp, L" browser2=%p\n", _browser2);
-    }
-
-    if (_browser2 != NULL) {
-        _browser2->Navigate(L"http://www.yahoo.co.jp/", 0,0,0,0);
     }
 }
 
@@ -166,7 +225,7 @@ void TrayBrowser::resize(RECT* rect)
     }
 }
 
-void TrayBrowser::handleUI(LPARAM lParam, POINT pt)
+void TrayBrowser::handleIconUI(LPARAM lParam, POINT pt)
 {
     switch (lParam) {
     case WM_LBUTTONDBLCLK:
@@ -192,6 +251,41 @@ void TrayBrowser::handleUI(LPARAM lParam, POINT pt)
         }
         PostMessage(_hWnd, WM_NULL, 0, 0);
         break;
+    }
+}
+
+void TrayBrowser::doCommand(WPARAM wParam)
+{
+    switch (LOWORD(wParam)) {
+    case IDM_EXIT:
+        DestroyWindow(_hWnd);
+        break;
+    case IDM_OPEN:
+        openURL();
+        break;
+    case IDM_PIN:
+        break;
+    }
+}
+
+void TrayBrowser::openURL()
+{
+    if (_browser2 != NULL) {
+        BSTR bstrSrc = NULL;
+        _browser2->get_LocationURL(&bstrSrc);
+        if (bstrSrc != NULL) {
+            WCHAR* url = showTextInputDialog(_hWnd, (WCHAR*)bstrSrc);;
+            if (url != NULL) {
+                if (logfp) fwprintf(logfp, L" openURL: url=%s\n", url);
+                BSTR bstrUrl = SysAllocString(url);
+                if (bstrUrl != NULL) {
+                    _browser2->Navigate(bstrUrl, NULL, NULL, NULL, NULL);
+                    SysFreeString(bstrUrl);
+                }
+                free(url);
+            }
+            SysFreeString(bstrSrc);
+        }
     }
 }
 
@@ -240,13 +334,9 @@ static LRESULT CALLBACK trayBrowserWndProc(
         // Command specified.
 	LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
 	TrayBrowser* self = (TrayBrowser*)lp;
-	switch (LOWORD(wParam)) {
-	case IDM_OPEN:
-	    break;
-	case IDM_EXIT:
-	    DestroyWindow(hWnd);
-	    break;
-	}
+        if (self != NULL) {
+            self->doCommand(wParam);
+        }
 	return FALSE;
     }
 
@@ -274,7 +364,7 @@ static LRESULT CALLBACK trayBrowserWndProc(
             // UI event handling.
             POINT pt;
             if (GetCursorPos(&pt)) {
-                self->handleUI(lParam, pt);
+                self->handleIconUI(lParam, pt);
             }
         }
         return FALSE;
@@ -325,19 +415,10 @@ int TrayBrowserMain(
     // Register the window message.
     WM_TASKBAR_CREATED = RegisterWindowMessage(TASKBAR_CREATED);
     
-    // Initialize the menu.
-    HMENU menu = LoadMenu(hInstance, MAKEINTRESOURCE(IDM_POPUPMENU));
-    if (menu != NULL) {
-        menu = GetSubMenu(menu, 0);
-        if (menu != NULL) {
-            SetMenuDefaultItem(menu, IDM_OPEN, FALSE);
-        }
-    }
-    
     OleInitialize(0);
 
     // Create a TrayBrowser object.
-    TrayBrowser* browser = new TrayBrowser(1, menu);
+    TrayBrowser* browser = new TrayBrowser(1);
     
     // Create a main window.
     HWND hWnd = CreateWindow(
