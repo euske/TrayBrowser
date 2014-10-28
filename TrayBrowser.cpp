@@ -29,21 +29,28 @@ class TrayBrowser
 {
     int _iconId;
     HWND _hWnd;
-
+    HMENU _hMenu;
+    
     AXClientSite* _site;
     IStorage* _storage;
     IOleObject* _ole;
     IWebBrowser2* _browser2;
 
 public:
-    TrayBrowser(int id) : _iconId(id) { } 
+    TrayBrowser(int id, HMENU menu);
     void initialize(HWND hWnd, RECT* rect);
     void unInitialize();
     void registerIcon();
     void unregisterIcon();
     void resize(RECT* rect);
-    void show() { }
+    void handleUI(LPARAM lParam, POINT pt);
 };
+
+TrayBrowser::TrayBrowser(int id, HMENU menu)
+{
+    _iconId = id;
+    _hMenu = menu;
+}
 
 void TrayBrowser::initialize(HWND hWnd, RECT* rect)
 {
@@ -159,6 +166,35 @@ void TrayBrowser::resize(RECT* rect)
     }
 }
 
+void TrayBrowser::handleUI(LPARAM lParam, POINT pt)
+{
+    switch (lParam) {
+    case WM_LBUTTONDBLCLK:
+        if (_hMenu != NULL) {
+            UINT item = GetMenuDefaultItem(_hMenu, FALSE, 0);
+            SendMessage(_hWnd, WM_COMMAND, MAKEWPARAM(item, 1), NULL);
+        }
+        break;
+        
+    case WM_LBUTTONUP:
+        if (IsWindowVisible(_hWnd)) {
+            ShowWindow(_hWnd, SW_HIDE);
+        } else {
+            ShowWindow(_hWnd, SW_SHOWNORMAL);
+            SetForegroundWindow(_hWnd);
+        }
+        break;
+        
+    case WM_RBUTTONUP:
+        if (_hMenu != NULL) {
+            TrackPopupMenu(_hMenu, TPM_LEFTALIGN, 
+                           pt.x, pt.y, 0, _hWnd, NULL);
+        }
+        PostMessage(_hWnd, WM_NULL, 0, 0);
+        break;
+    }
+}
+
 
 //  trayBrowserWndProc
 //
@@ -208,7 +244,7 @@ static LRESULT CALLBACK trayBrowserWndProc(
 	case IDM_OPEN:
 	    break;
 	case IDM_EXIT:
-	    SendMessage(hWnd, WM_CLOSE, 0, 0);
+	    DestroyWindow(hWnd);
 	    break;
 	}
 	return FALSE;
@@ -227,45 +263,21 @@ static LRESULT CALLBACK trayBrowserWndProc(
     }
         
     case WM_CLOSE:
-	DestroyWindow(hWnd);
+	ShowWindow(hWnd, SW_HIDE);
 	return FALSE;
 
     case WM_NOTIFY_ICON:
     {
-        // UI event handling.
-	POINT pt;
-        HMENU menu = GetMenu(hWnd);
-        if (menu != NULL) {
-            menu = GetSubMenu(menu, 0);
+	LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
+	TrayBrowser* self = (TrayBrowser*)lp;
+        if (self != NULL) {
+            // UI event handling.
+            POINT pt;
+            if (GetCursorPos(&pt)) {
+                self->handleUI(lParam, pt);
+            }
         }
-	switch (lParam) {
-	case WM_LBUTTONDBLCLK:
-            if (menu != NULL) {
-                UINT item = GetMenuDefaultItem(menu, FALSE, 0);
-                SendMessage(hWnd, WM_COMMAND, MAKEWPARAM(item, 1), NULL);
-            }
-	    break;
-	case WM_LBUTTONUP:
-            {
-                LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
-                TrayBrowser* self = (TrayBrowser*)lp;
-                if (self != NULL) {
-                    self->show();
-                }
-            }
-	    break;
-	case WM_RBUTTONUP:
-	    if (GetCursorPos(&pt)) {
-                SetForegroundWindow(hWnd);
-                if (menu != NULL) {
-                    TrackPopupMenu(menu, TPM_LEFTALIGN, 
-                                   pt.x, pt.y, 0, hWnd, NULL);
-                }
-		PostMessage(hWnd, WM_NULL, 0, 0);
-	    }
-	    break;
-	}
-	return FALSE;
+        return FALSE;
     }
 
     default:
@@ -306,18 +318,26 @@ int TrayBrowserMain(
 	//klass.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_TRAYBROWSER));
         klass.hIcon = LoadIcon(NULL, MAKEINTRESOURCE(IDI_APPLICATION));
 	klass.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
-        klass.lpszMenuName = MAKEINTRESOURCE(IDM_POPUPMENU);
-	klass.lpszClassName = TRAYBROWSER_WNDCLASS;
+        klass.lpszClassName = TRAYBROWSER_WNDCLASS;
 	atom = RegisterClass(&klass);
     }
 
     // Register the window message.
     WM_TASKBAR_CREATED = RegisterWindowMessage(TASKBAR_CREATED);
     
+    // Initialize the menu.
+    HMENU menu = LoadMenu(hInstance, MAKEINTRESOURCE(IDM_POPUPMENU));
+    if (menu != NULL) {
+        menu = GetSubMenu(menu, 0);
+        if (menu != NULL) {
+            SetMenuDefaultItem(menu, IDM_OPEN, FALSE);
+        }
+    }
+    
     OleInitialize(0);
 
     // Create a TrayBrowser object.
-    TrayBrowser* browser = new TrayBrowser(1);
+    TrayBrowser* browser = new TrayBrowser(1, menu);
     
     // Create a main window.
     HWND hWnd = CreateWindow(
@@ -328,16 +348,6 @@ int TrayBrowserMain(
 	CW_USEDEFAULT, CW_USEDEFAULT,
 	NULL, NULL, hInstance, browser);
     ShowWindow(hWnd, nCmdShow);
-    {
-        // Set the default item.
-        HMENU menu = GetMenu(hWnd);
-        if (menu != NULL) {
-            menu = GetSubMenu(menu, 0);
-            if (menu != NULL) {
-                SetMenuDefaultItem(menu, IDM_OPEN, FALSE);
-            }
-        }
-    }
 
     // Event loop.
     MSG msg;
@@ -369,6 +379,6 @@ int WinMain(HINSTANCE hInstance,
 int wmain(int argc, wchar_t* argv[])
 {
     logfp = stderr;
-    return TrayBrowserMain(GetModuleHandle(NULL), NULL, SW_SHOW, argc, argv);
+    return TrayBrowserMain(GetModuleHandle(NULL), NULL, SW_SHOWDEFAULT, argc, argv);
 }
 #endif
