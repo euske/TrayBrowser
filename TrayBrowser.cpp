@@ -101,7 +101,8 @@ void TrayBrowser::unInitialize()
     if (_ole != NULL) {
         IOleInPlaceObject* iib = NULL;
         if (SUCCEEDED(_ole->QueryInterface(
-                          IID_IOleInPlaceObject, (void**)iib))) {
+                          IID_IOleInPlaceObject,
+                          (void**)&iib))) {
             iib->UIDeactivate();
             iib->InPlaceDeactivate();
             iib->Release();
@@ -149,7 +150,8 @@ void TrayBrowser::resize(RECT* rect)
     if (_ole != NULL) {
         IOleInPlaceObject* iib = NULL;
         if (SUCCEEDED(_ole->QueryInterface(
-                          IID_IOleInPlaceObject, (void**)iib))) {
+                          IID_IOleInPlaceObject,
+                          (void**)&iib))) {
             if (logfp) fwprintf(logfp, L" resize\n");
             iib->SetObjectRects(rect, rect);
             iib->Release();

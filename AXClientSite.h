@@ -1,4 +1,6 @@
 // -*- mode: c++ -*-
+//  AXClientSite.h
+// 
 #include <Windows.h>
 #include <OleIdl.h>
 
