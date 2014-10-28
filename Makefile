@@ -27,12 +27,13 @@ clean:
 	-$(DEL) $(TARGET)
 	-$(DEL) *.lib *.exp *.obj *.res *.ilk *.pdb *.manifest
 
-$(TARGET): TrayBrowser.obj TrayBrowser.res
+$(TARGET): TrayBrowser.res TrayBrowser.obj AXClientSite.obj
 	$(LINK) $(LDFLAGS) /manifest /out:$@ $** $(LIBS)
 	$(MT) -manifest $@.manifest -outputresource:$@;1
 
 TrayBrowser.cpp: Resource.h
 TrayBrowser.rc: Resource.h
+AXClientSite.cpp: AXClientSite.h
 
 .cpp.obj:
 	$(CC) $(CFLAGS) /Fo$@ /c $< $(DEFS) $(INCLUDES)

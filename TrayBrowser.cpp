@@ -8,6 +8,7 @@
 #include <ExDisp.h>
 #include <Mshtmhst.h>
 #include "Resource.h"
+#include "AXClientSite.h"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
@@ -27,41 +28,96 @@ static FILE* logfp = NULL;
 class TrayBrowser
 {
     int _iconId;
-    IWebBrowser2* _browser2;
-    IDocHostShowUI* _showUI;
     HWND _hWnd;
+
+    AXClientSite* _site;
+    IStorage* _storage;
+    IOleObject* _ole;
+    IWebBrowser2* _browser2;
 
 public:
     TrayBrowser(int id) : _iconId(id) { } 
-    int getIconId() { return _iconId; }
-    void initialize(HWND hwnd);
+    void initialize(HWND hWnd, RECT* rect);
     void unInitialize();
     void registerIcon();
     void unregisterIcon();
+    void resize(RECT* rect);
     void show() { }
 };
 
-void TrayBrowser::initialize(HWND hwnd)
+void TrayBrowser::initialize(HWND hWnd, RECT* rect)
 {
-    _hWnd = hwnd;
-    CoCreateInstance(CLSID_InternetExplorer, NULL, CLSCTX_LOCAL_SERVER,
-                          IID_IWebBrowser2, (void**)&_browser2);
+    HRESULT hr;
+
+    _hWnd = hWnd;
+    _site = new AXClientSite(hWnd);
+    if (logfp) fwprintf(logfp, L" site=%p\n", _site);
+
+    hr = StgCreateDocfile(
+        NULL,
+        (STGM_READWRITE | STGM_SHARE_EXCLUSIVE |
+         STGM_CREATE | STGM_DIRECT),
+        0, &_storage);
+    if (logfp) fwprintf(logfp, L" storage=%p\n", _storage);
+
+    if (_site != NULL && _storage != NULL) {
+        hr = OleCreate(
+            CLSID_WebBrowser,
+            IID_IOleObject,
+            OLERENDER_DRAW,
+            0,
+            _site,
+            _storage,
+            (void**)&_ole);
+        if (logfp) fwprintf(logfp, L" ole=%p\n", _ole);
+    }
+
+    if (_ole != NULL) {
+        hr = _ole->DoVerb(
+            OLEIVERB_INPLACEACTIVATE,
+            NULL,
+            _site,
+            0, hWnd, rect);
+    
+        hr = _ole->QueryInterface(
+            IID_IWebBrowser2,
+            (void**)&_browser2);
+        if (logfp) fwprintf(logfp, L" browser2=%p\n", _browser2);
+    }
+
     if (_browser2 != NULL) {
-        _browser2->put_Visible(VARIANT_TRUE);
-        _browser2->QueryInterface(IID_IDocHostShowUI, (void**)&_showUI);
+        _browser2->Navigate(L"http://www.yahoo.co.jp/", 0,0,0,0);
     }
 }
 
 void TrayBrowser::unInitialize()
 {
-    if (_showUI) {
-        _showUI->Release();
-        _showUI = NULL;
-    }
     if (_browser2) {
         _browser2->Quit();
         _browser2->Release();
         _browser2 = NULL;
+    }
+
+    if (_ole != NULL) {
+        IOleInPlaceObject* iib = NULL;
+        if (SUCCEEDED(_ole->QueryInterface(
+                          IID_IOleInPlaceObject, (void**)iib))) {
+            iib->UIDeactivate();
+            iib->InPlaceDeactivate();
+            iib->Release();
+        }
+        _ole->Release();
+        _ole = NULL;
+    }
+
+    if (_storage != NULL) {
+        _storage->Release();
+        _storage = NULL;
+    }
+
+    if (_site != NULL) {
+        _site->Release();
+        delete _site;
     }
 };
 
@@ -88,6 +144,19 @@ void TrayBrowser::unregisterIcon()
     Shell_NotifyIcon(NIM_DELETE, &nidata);
 }
 
+void TrayBrowser::resize(RECT* rect)
+{
+    if (_ole != NULL) {
+        IOleInPlaceObject* iib = NULL;
+        if (SUCCEEDED(_ole->QueryInterface(
+                          IID_IOleInPlaceObject, (void**)iib))) {
+            if (logfp) fwprintf(logfp, L" resize\n");
+            iib->SetObjectRects(rect, rect);
+            iib->Release();
+        }
+    }
+}
+
 
 //  trayBrowserWndProc
 //
@@ -106,8 +175,10 @@ static LRESULT CALLBACK trayBrowserWndProc(
 	CREATESTRUCT* cs = (CREATESTRUCT*)lParam;
 	TrayBrowser* self = (TrayBrowser*)(cs->lpCreateParams);
         if (self != NULL) {
+            RECT rect;
 	    SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)self);
-            self->initialize(hWnd);
+            GetClientRect(hWnd, &rect);
+            self->initialize(hWnd, &rect);
             self->registerIcon();
         }
 	return FALSE;
@@ -141,6 +212,18 @@ static LRESULT CALLBACK trayBrowserWndProc(
 	return FALSE;
     }
 
+    case WM_SIZE:
+    {
+	LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
+	TrayBrowser* self = (TrayBrowser*)lp;
+        if (self != NULL) {
+            RECT rect;
+            GetClientRect(hWnd, &rect);
+            self->resize(&rect);
+        }
+        return FALSE;
+    }
+        
     case WM_CLOSE:
 	DestroyWindow(hWnd);
 	return FALSE;
@@ -229,16 +312,16 @@ int TrayBrowserMain(
     // Register the window message.
     WM_TASKBAR_CREATED = RegisterWindowMessage(TASKBAR_CREATED);
     
-    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    OleInitialize(0);
 
     // Create a TrayBrowser object.
     TrayBrowser* browser = new TrayBrowser(1);
     
-    // Create a SysTray window.
+    // Create a main window.
     HWND hWnd = CreateWindow(
 	(LPCWSTR)atom,
 	TRAYBROWSER_NAME,
-	(WS_OVERLAPPED | WS_SYSMENU),
+	WS_OVERLAPPEDWINDOW,
 	CW_USEDEFAULT, CW_USEDEFAULT,
 	CW_USEDEFAULT, CW_USEDEFAULT,
 	NULL, NULL, hInstance, browser);
@@ -264,8 +347,6 @@ int TrayBrowserMain(
     // Clean up.
     delete browser;
 
-    CoUninitialize();
-
     return (int)msg.wParam;
 }
 
@@ -286,6 +367,6 @@ int WinMain(HINSTANCE hInstance,
 int wmain(int argc, wchar_t* argv[])
 {
     logfp = stderr;
-    return TrayBrowserMain(GetModuleHandle(NULL), NULL, 0, argc, argv);
+    return TrayBrowserMain(GetModuleHandle(NULL), NULL, SW_SHOW, argc, argv);
 }
 #endif
