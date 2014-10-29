@@ -453,7 +453,7 @@ int WinMain(HINSTANCE hInstance,
 {
     int argc;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    _wfopen_s(&logfp, L"log.txt", L"a");
+    //_wfopen_s(&logfp, L"log.txt", L"a");
     return TrayBrowserMain(hInstance, hPrevInstance, nCmdShow, argc, argv);
 }
 #else
