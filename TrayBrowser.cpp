@@ -24,6 +24,33 @@ const UINT WM_NOTIFY_ICON = WM_USER+1;
 static UINT WM_TASKBAR_CREATED;
 static FILE* logfp = NULL;      // logging
 
+static BOOL getMenuItemChecked(
+    HMENU menu,
+    UINT item)
+{
+    MENUITEMINFO mii = {0};
+    mii.cbSize = sizeof(mii);
+    mii.fMask = MIIM_STATE;
+    GetMenuItemInfo(menu, item, FALSE, &mii);
+    return (mii.fState & MFS_CHECKED);
+}
+
+static void setMenuItemChecked(
+    HMENU menu,
+    UINT item,
+    BOOL checked)
+{
+    MENUITEMINFO mii = {0};
+    mii.cbSize = sizeof(mii);
+    mii.fMask = MIIM_STATE;
+    GetMenuItemInfo(menu, item, FALSE, &mii);
+    if (checked) {
+        mii.fState |= MFS_CHECKED;
+    } else {
+        mii.fState &= ~MFS_CHECKED;
+    }
+    SetMenuItemInfo(menu, item, FALSE, &mii);
+}
 
 static INT_PTR CALLBACK showTextInputDialogProc(
     HWND hWnd,
@@ -91,6 +118,7 @@ class TrayBrowser
     IOleObject* _ole;
     IWebBrowser2* _browser2;
     void openURL();
+    void togglePin();
 
 public:
     TrayBrowser(int id);
@@ -264,6 +292,7 @@ void TrayBrowser::doCommand(WPARAM wParam)
         openURL();
         break;
     case IDM_PIN:
+        togglePin();
         break;
     }
 }
@@ -286,6 +315,16 @@ void TrayBrowser::openURL()
             }
             SysFreeString(bstrSrc);
         }
+    }
+}
+
+void TrayBrowser::togglePin()
+{
+    BOOL checked = getMenuItemChecked(_hMenu, IDM_PIN);
+    checked = !checked;
+    setMenuItemChecked(_hMenu, IDM_PIN, checked);
+    if (checked) {
+    } else {
     }
 }
 
@@ -401,8 +440,7 @@ int TrayBrowserMain(
     // Register the window class.
     ATOM atom;
     {
-	WNDCLASS klass;
-	ZeroMemory(&klass, sizeof(klass));
+	WNDCLASS klass = {0};
 	klass.lpfnWndProc = trayBrowserWndProc;
 	klass.hInstance = hInstance;
 	//klass.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_TRAYBROWSER));
