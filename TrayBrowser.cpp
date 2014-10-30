@@ -112,6 +112,7 @@ class TrayBrowser
     int _iconId;
     HWND _hWnd;
     HMENU _hMenu;
+    BOOL _modal;
     
     AXClientSite* _site;
     IStorage* _storage;
@@ -119,6 +120,7 @@ class TrayBrowser
     IWebBrowser2* _browser2;
     void openURL();
     void togglePin();
+    void toggleShow();
 
 public:
     TrayBrowser(int id);
@@ -134,6 +136,7 @@ public:
 TrayBrowser::TrayBrowser(int id)
 {
     _iconId = id;
+    _modal = FALSE;
     HMENU menu = LoadMenu(GetModuleHandle(NULL), MAKEINTRESOURCE(IDM_POPUPMENU));
     if (menu != NULL) {
         _hMenu = GetSubMenu(menu, 0);
@@ -263,14 +266,7 @@ void TrayBrowser::handleIconUI(LPARAM lParam, POINT pt)
         break;
         
     case WM_LBUTTONUP:
-        if (IsWindowVisible(_hWnd)) {
-            ShowWindow(_hWnd, SW_HIDE);
-        } else {
-            ShowWindow(_hWnd, SW_SHOWNORMAL);
-            if (!getMenuItemChecked(_hMenu, IDM_PIN)) {
-                SetForegroundWindow(_hWnd);
-            }
-        }
+        SendMessage(_hWnd, WM_COMMAND, MAKEWPARAM(IDM_SHOW, 1), NULL);
         break;
         
     case WM_RBUTTONUP:
@@ -295,11 +291,17 @@ void TrayBrowser::doCommand(WPARAM wParam)
     case IDM_PIN:
         togglePin();
         break;
+    case IDM_SHOW:
+        toggleShow();
+        break;
     }
 }
 
 void TrayBrowser::openURL()
 {
+    if (_modal) return;
+    
+    _modal = TRUE;
     if (_browser2 != NULL) {
         BSTR bstrSrc = NULL;
         _browser2->get_LocationURL(&bstrSrc);
@@ -317,6 +319,7 @@ void TrayBrowser::openURL()
             SysFreeString(bstrSrc);
         }
     }
+    _modal = FALSE;
 }
 
 void TrayBrowser::togglePin()
@@ -337,6 +340,20 @@ void TrayBrowser::togglePin()
     SetWindowPos(_hWnd, hwndAfter, 0,0,0,0, 
                  (SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE));
     SetWindowLongPtr(_hWnd, GWL_EXSTYLE, exStyle);
+}
+
+void TrayBrowser::toggleShow()
+{
+    if (_modal) return;
+
+    if (IsWindowVisible(_hWnd)) {
+        ShowWindow(_hWnd, SW_HIDE);
+    } else {
+        ShowWindow(_hWnd, SW_SHOWNORMAL);
+        if (!getMenuItemChecked(_hMenu, IDM_PIN)) {
+            SetForegroundWindow(_hWnd);
+        }
+    }
 }
 
 

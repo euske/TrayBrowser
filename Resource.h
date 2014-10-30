@@ -4,5 +4,6 @@
 #define IDM_EXIT 201
 #define IDM_OPEN 202
 #define IDM_PIN 203
+#define IDM_SHOW 204
 #define IDD_TEXTINPUT 300
 #define IDC_EDIT_URL 301
