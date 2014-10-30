@@ -31,7 +31,7 @@ $(TARGET): TrayBrowser.res TrayBrowser.obj AXClientSite.obj
 	$(LINK) $(LDFLAGS) /manifest /out:$@ $** $(LIBS)
 	$(MT) -manifest $@.manifest -outputresource:$@;1
 
-TrayBrowser.cpp: Resource.h
+TrayBrowser.cpp: Resource.h AXClientSite.h
 TrayBrowser.rc: Resource.h
 AXClientSite.cpp: AXClientSite.h
 

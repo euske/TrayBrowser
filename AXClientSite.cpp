@@ -61,7 +61,7 @@ STDMETHODIMP AXClientSite::GetWindowContext(
     GetClientRect(_hWnd, lprcClipRect);
     
     lpFrameInfo->cb = sizeof(*lpFrameInfo);
-    lpFrameInfo->fMDIApp = false;
+    lpFrameInfo->fMDIApp = FALSE;
     lpFrameInfo->hwndFrame = _hWnd;
     lpFrameInfo->haccel = NULL;
     lpFrameInfo->cAccelEntries = 0;
