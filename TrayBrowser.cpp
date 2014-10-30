@@ -246,7 +246,6 @@ void TrayBrowser::resize(RECT* rect)
         if (SUCCEEDED(_ole->QueryInterface(
                           IID_IOleInPlaceObject,
                           (void**)&iib))) {
-            if (logfp) fwprintf(logfp, L" resize\n");
             iib->SetObjectRects(rect, rect);
             iib->Release();
         }
@@ -268,7 +267,9 @@ void TrayBrowser::handleIconUI(LPARAM lParam, POINT pt)
             ShowWindow(_hWnd, SW_HIDE);
         } else {
             ShowWindow(_hWnd, SW_SHOWNORMAL);
-            SetForegroundWindow(_hWnd);
+            if (!getMenuItemChecked(_hMenu, IDM_PIN)) {
+                SetForegroundWindow(_hWnd);
+            }
         }
         break;
         
@@ -320,12 +321,22 @@ void TrayBrowser::openURL()
 
 void TrayBrowser::togglePin()
 {
-    BOOL checked = getMenuItemChecked(_hMenu, IDM_PIN);
-    checked = !checked;
-    setMenuItemChecked(_hMenu, IDM_PIN, checked);
-    if (checked) {
+    BOOL pinned = getMenuItemChecked(_hMenu, IDM_PIN);
+    pinned = !pinned;
+    if (logfp) fwprintf(logfp, L" togglePin: %d\n", pinned);
+    setMenuItemChecked(_hMenu, IDM_PIN, pinned);
+    DWORD exStyle = GetWindowLongPtr(_hWnd, GWL_EXSTYLE);
+    HWND hwndAfter = NULL;
+    if (pinned) {
+        exStyle |= WS_EX_NOACTIVATE;
+        hwndAfter = HWND_TOPMOST;
     } else {
+        exStyle &= ~WS_EX_NOACTIVATE;
+        hwndAfter = HWND_NOTOPMOST;
     }
+    SetWindowPos(_hWnd, hwndAfter, 0,0,0,0, 
+                 (SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE));
+    SetWindowLongPtr(_hWnd, GWL_EXSTYLE, exStyle);
 }
 
 
