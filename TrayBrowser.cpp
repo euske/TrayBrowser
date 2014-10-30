@@ -328,18 +328,9 @@ void TrayBrowser::togglePin()
     pinned = !pinned;
     if (logfp) fwprintf(logfp, L" togglePin: %d\n", pinned);
     setMenuItemChecked(_hMenu, IDM_PIN, pinned);
-    DWORD exStyle = GetWindowLongPtr(_hWnd, GWL_EXSTYLE);
-    HWND hwndAfter = NULL;
-    if (pinned) {
-        exStyle |= WS_EX_NOACTIVATE;
-        hwndAfter = HWND_TOPMOST;
-    } else {
-        exStyle &= ~WS_EX_NOACTIVATE;
-        hwndAfter = HWND_NOTOPMOST;
-    }
+    HWND hwndAfter = (pinned)? HWND_TOPMOST : HWND_NOTOPMOST;
     SetWindowPos(_hWnd, hwndAfter, 0,0,0,0, 
                  (SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE));
-    SetWindowLongPtr(_hWnd, GWL_EXSTYLE, exStyle);
 }
 
 void TrayBrowser::toggleShow()
@@ -350,9 +341,6 @@ void TrayBrowser::toggleShow()
         ShowWindow(_hWnd, SW_HIDE);
     } else {
         ShowWindow(_hWnd, SW_SHOWNORMAL);
-        if (!getMenuItemChecked(_hMenu, IDM_PIN)) {
-            SetForegroundWindow(_hWnd);
-        }
     }
 }
 
