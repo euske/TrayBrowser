@@ -1,7 +1,8 @@
 #define IDC_STATIC -1
-#define IDM_POPUPMENU 100
-#define IDM_EXIT 101
-#define IDM_OPEN 102
-#define IDM_PIN 103
-#define IDD_TEXTINPUT 200
-#define IDC_EDIT_URL 201
+#define IDI_TRAYBROWSER 100
+#define IDM_POPUPMENU 200
+#define IDM_EXIT 201
+#define IDM_OPEN 202
+#define IDM_PIN 203
+#define IDD_TEXTINPUT 300
+#define IDC_EDIT_URL 301

@@ -30,6 +30,8 @@ BEGIN
     END
 END
 
+IDI_TRAYBROWSER ICON "TrayBrowser.ico"
+
 IDM_POPUPMENU MENU
 BEGIN
     POPUP "&File"

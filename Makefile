@@ -32,7 +32,7 @@ $(TARGET): TrayBrowser.res TrayBrowser.obj AXClientSite.obj
 	$(MT) -manifest $@.manifest -outputresource:$@;1
 
 TrayBrowser.cpp: Resource.h AXClientSite.h
-TrayBrowser.rc: Resource.h
+TrayBrowser.rc: Resource.h TrayBrowser.ico
 AXClientSite.cpp: AXClientSite.h
 
 .cpp.obj:

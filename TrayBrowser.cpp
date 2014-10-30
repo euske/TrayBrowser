@@ -454,8 +454,7 @@ int TrayBrowserMain(
 	WNDCLASS klass = {0};
 	klass.lpfnWndProc = trayBrowserWndProc;
 	klass.hInstance = hInstance;
-	//klass.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_TRAYBROWSER));
-        klass.hIcon = LoadIcon(NULL, MAKEINTRESOURCE(IDI_APPLICATION));
+	klass.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_TRAYBROWSER));
 	klass.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
         klass.lpszClassName = TRAYBROWSER_WNDCLASS;
 	atom = RegisterClass(&klass);
