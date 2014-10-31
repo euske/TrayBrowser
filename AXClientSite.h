@@ -26,7 +26,7 @@ public:
     STDMETHODIMP_(ULONG) Release()
         { _refCount--; return _refCount; }
     
-    // IDispatch Methods
+    // IDispatch methods
     STDMETHODIMP GetTypeInfoCount(UINT*)
         { return E_NOTIMPL; }
     STDMETHODIMP GetTypeInfo(UINT, LCID, ITypeInfo**)
@@ -40,7 +40,7 @@ public:
     STDMETHODIMP GetMoniker(DWORD, DWORD, IMoniker** ppmk)
         { *ppmk = NULL; return E_NOTIMPL; }
     STDMETHODIMP GetContainer(IOleContainer** ppc)
-        { *ppc = NULL; return E_NOTIMPL; }
+        { *ppc = NULL; return E_NOINTERFACE; }
     STDMETHODIMP SaveObject()
         { return S_OK; }
     STDMETHODIMP ShowObject()
@@ -85,7 +85,7 @@ public:
     STDMETHODIMP GetBorder(LPRECT lprectBorder)
         { GetClientRect(_hWnd, lprectBorder); return S_OK; }
     STDMETHODIMP RequestBorderSpace(LPCBORDERWIDTHS)
-        { return E_NOTIMPL; }        
+        { return E_NOTIMPL; }
     STDMETHODIMP SetBorderSpace(LPCBORDERWIDTHS)
         { return S_OK; }
     STDMETHODIMP SetActiveObject(IOleInPlaceActiveObject*, LPCOLESTR)

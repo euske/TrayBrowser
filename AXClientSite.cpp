@@ -21,8 +21,6 @@ STDMETHODIMP AXClientSite::QueryInterface(REFIID iid, void** ppvObject)
         *ppvObject = this;
     } else if (iid == IID_IDispatch) {
         *ppvObject = (IDispatch*)this;
-    } else if (iid == IID_IAdviseSink) {
-        *ppvObject = (IAdviseSink*)this;
     } else if (iid == IID_IOleClientSite) {
         *ppvObject = (IOleClientSite*)this;
     } else if (iid == IID_IOleInPlaceSite) {
