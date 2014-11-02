@@ -38,6 +38,10 @@ BEGIN
     BEGIN
         MENUITEM "&Open", IDM_OPEN
         MENUITEM "&Pin", IDM_PIN
+        POPUP "&Recent"
+        BEGIN
+            MENUITEM "Recent", IDM_RECENT
+        END
         MENUITEM SEPARATOR
         MENUITEM "E&xit", IDM_EXIT
     END

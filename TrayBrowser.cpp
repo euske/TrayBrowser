@@ -19,6 +19,7 @@
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "shlwapi.lib")
 
+#define MAX_URL_LENGTH 256
 const LPCWSTR TRAYBROWSER_NAME = L"TrayBrowser";
 const LPCWSTR TRAYBROWSER_INI = L"TrayBrowser.ini";
 const LPCWSTR TRAYBROWSER_WNDCLASS = L"TrayBrowserClass";
@@ -121,8 +122,13 @@ static int trayBrowserINIHandler(
     void* user, const char* section,
     const char* name, const char* value)
 {
-    fprintf(stderr, "section=%s, name=%s, value=%s\n", section, name, value);
+    fprintf(stderr, " section=%s, name=%s, value=%s\n", section, name, value);
 
+    wchar_t wvalue[MAX_URL_LENGTH];
+    mbstowcs_s(NULL, wvalue, _countof(wvalue), value, _TRUNCATE);
+    HMENU menu = (HMENU)user;
+    UINT uid = IDM_RECENT + GetMenuItemCount(menu);
+    AppendMenu(menu, MF_STRING, uid, wvalue);
     return 1;
 }
 
@@ -134,6 +140,7 @@ class TrayBrowser
     int _iconId;
     HWND _hWnd;
     HMENU _hMenu;
+    HMENU _hBookmarks;
     BOOL _modal;
     
     AXClientSite* _site;
@@ -141,13 +148,15 @@ class TrayBrowser
     IOleObject* _ole;
     IWebBrowser2* _browser2;
 
-    void openURL();
+    void openURL(const WCHAR* url);
+    void openURLDialog();
     void togglePin();
     void toggleShow();
 
 public:
     TrayBrowser(int id);
     void loadIni(const WCHAR* path);
+    void saveIni(const WCHAR* path);
     void initialize(HWND hWnd, RECT* rect);
     void unInitialize();
     void registerIcon();
@@ -166,6 +175,8 @@ TrayBrowser::TrayBrowser(int id)
         _hMenu = GetSubMenu(menu, 0);
         if (_hMenu != NULL) {
             SetMenuDefaultItem(_hMenu, IDM_OPEN, FALSE);
+            _hBookmarks = GetSubMenu(_hMenu, 2);
+            DeleteMenu(_hBookmarks, IDM_RECENT, MF_BYCOMMAND);
         }
     }
 }
@@ -178,7 +189,28 @@ void TrayBrowser::loadIni(const WCHAR* path)
     {
         FILE* fp = NULL;
         if (_wfopen_s(&fp, path, L"r") == 0) {
-            ini_parse_file(fp, trayBrowserINIHandler, this);
+            ini_parse_file(fp, trayBrowserINIHandler, _hBookmarks);
+            fclose(fp);
+        }
+    }
+}
+
+void TrayBrowser::saveIni(const WCHAR* path)
+{
+    if (logfp) fwprintf(logfp, L" saveIni: path=%s\n", path);
+
+    // Open the .ini file.
+    if (_hBookmarks != NULL) {
+        FILE* fp = NULL;
+        if (_wfopen_s(&fp, path, L"w") == 0) {
+            fwprintf(fp, L"[bookmarks]\n");
+            for (int i = 0; i < GetMenuItemCount(_hBookmarks); i++) {
+                WCHAR value[MAX_URL_LENGTH];
+                GetMenuString(_hBookmarks, i, value, _countof(value),
+                              MF_BYPOSITION);
+                fwprintf(fp, L"url%d = %s\n", i, value);
+            }
+            fwprintf(fp, L"\n");
             fclose(fp);
         }
     }
@@ -319,12 +351,13 @@ void TrayBrowser::handleIconUI(LPARAM lParam, POINT pt)
 
 void TrayBrowser::doCommand(WPARAM wParam)
 {
-    switch (LOWORD(wParam)) {
+    UINT uid = LOWORD(wParam);
+    switch (uid) {
     case IDM_EXIT:
         DestroyWindow(_hWnd);
         break;
     case IDM_OPEN:
-        openURL();
+        openURLDialog();
         break;
     case IDM_PIN:
         togglePin();
@@ -332,10 +365,30 @@ void TrayBrowser::doCommand(WPARAM wParam)
     case IDM_SHOW:
         toggleShow();
         break;
+    default:
+        if (IDM_RECENT <= uid) {
+            WCHAR value[MAX_URL_LENGTH];
+            if (GetMenuString(_hBookmarks, uid, value, _countof(value),
+                              MF_BYCOMMAND)) {
+                openURL(value);
+            }
+        }
+        break;
     }
 }
 
-void TrayBrowser::openURL()
+void TrayBrowser::openURL(const WCHAR* url)
+{
+    if (_browser2 != NULL) {
+        BSTR bstrUrl = SysAllocString(url);
+        if (bstrUrl != NULL) {
+            _browser2->Navigate(bstrUrl, NULL, NULL, NULL, NULL);
+            SysFreeString(bstrUrl);
+        }
+    }
+ }
+
+void TrayBrowser::openURLDialog()
 {
     if (_modal) return;
     
@@ -347,11 +400,7 @@ void TrayBrowser::openURL()
             WCHAR* url = showTextInputDialog(_hWnd, (WCHAR*)bstrSrc);;
             if (url != NULL) {
                 if (logfp) fwprintf(logfp, L" openURL: url=%s\n", url);
-                BSTR bstrUrl = SysAllocString(url);
-                if (bstrUrl != NULL) {
-                    _browser2->Navigate(bstrUrl, NULL, NULL, NULL, NULL);
-                    SysFreeString(bstrUrl);
-                }
+                openURL(url);
                 free(url);
             }
             SysFreeString(bstrSrc);
@@ -366,9 +415,18 @@ void TrayBrowser::togglePin()
     pinned = !pinned;
     if (logfp) fwprintf(logfp, L" togglePin: %d\n", pinned);
     setMenuItemChecked(_hMenu, IDM_PIN, pinned);
+    
     HWND hwndAfter = (pinned)? HWND_TOPMOST : HWND_NOTOPMOST;
     SetWindowPos(_hWnd, hwndAfter, 0,0,0,0, 
                  (SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE));
+    
+    DWORD exStyle = GetWindowLongPtr(_hWnd, GWL_EXSTYLE);
+    if (pinned) {
+        exStyle |= WS_EX_NOACTIVATE;
+    } else {
+        exStyle &= ~WS_EX_NOACTIVATE;
+    }
+    SetWindowLongPtr(_hWnd, GWL_EXSTYLE, exStyle);
 }
 
 void TrayBrowser::toggleShow()
@@ -510,13 +568,13 @@ int TrayBrowserMain(
 
     // Create a TrayBrowser object.
     TrayBrowser* browser = new TrayBrowser(1);
-    {
-        WCHAR path[MAX_PATH];
-        GetModuleFileName(hInstance, path, _countof(path));
-        PathRemoveFileSpec(path);
-        PathAppend(path, TRAYBROWSER_INI);
-        browser->loadIni(path);
-    }
+
+    // Load a .ini file.
+    WCHAR path[MAX_PATH];
+    GetModuleFileName(hInstance, path, _countof(path));
+    PathRemoveFileSpec(path);
+    PathAppend(path, TRAYBROWSER_INI);
+    browser->loadIni(path);
     
     // Create a main window.
     HWND hWnd = CreateWindow(
@@ -536,6 +594,7 @@ int TrayBrowserMain(
     }
 
     // Clean up.
+    browser->saveIni(path);
     delete browser;
 
     return (int)msg.wParam;
