@@ -386,6 +386,22 @@ void TrayBrowser::openURL(const WCHAR* url)
             SysFreeString(bstrUrl);
         }
     }
+    
+    UINT maxuid = IDM_RECENT;
+    for (int i = 0; i < GetMenuItemCount(_hBookmarks); i++) {
+        UINT uid = GetMenuItemID(_hBookmarks, i);
+        maxuid = (maxuid < uid)? uid : maxuid;
+    }
+    for (int i = 0; i < GetMenuItemCount(_hBookmarks); i++) {
+        WCHAR value[MAX_URL_LENGTH];
+        if (GetMenuString(_hBookmarks, i, value, _countof(value), MF_BYPOSITION)) {
+            if (wcscmp(url, value) == 0) {
+                DeleteMenu(_hBookmarks, i, MF_BYPOSITION);
+                break;
+            }
+        }
+    }
+    InsertMenu(_hBookmarks, 0, MF_BYPOSITION | MF_STRING, maxuid+1, url);
  }
 
 void TrayBrowser::openURLDialog()
@@ -422,9 +438,9 @@ void TrayBrowser::togglePin()
     
     DWORD exStyle = GetWindowLongPtr(_hWnd, GWL_EXSTYLE);
     if (pinned) {
-        exStyle |= WS_EX_NOACTIVATE;
+        exStyle |= WS_EX_TOOLWINDOW;
     } else {
-        exStyle &= ~WS_EX_NOACTIVATE;
+        exStyle &= ~WS_EX_TOOLWINDOW;
     }
     SetWindowLongPtr(_hWnd, GWL_EXSTYLE, exStyle);
 }
@@ -433,11 +449,10 @@ void TrayBrowser::toggleShow()
 {
     if (_modal) return;
 
-    if (IsWindowVisible(_hWnd)) {
-        ShowWindow(_hWnd, SW_HIDE);
-    } else {
+    if (!IsWindowVisible(_hWnd)) {
         ShowWindow(_hWnd, SW_SHOWNORMAL);
     }
+    SetForegroundWindow(_hWnd);
 }
 
 
