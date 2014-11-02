@@ -28,6 +28,7 @@ const UINT WM_NOTIFY_ICON = WM_USER+1;
 static UINT WM_TASKBAR_CREATED;
 static FILE* logfp = NULL;      // logging
 
+// getMenuItemChecked: return TRUE if the item is checked.
 static BOOL getMenuItemChecked(
     HMENU menu,
     UINT item)
@@ -39,6 +40,7 @@ static BOOL getMenuItemChecked(
     return (mii.fState & MFS_CHECKED);
 }
 
+// setMenuItemChecked: check/uncheck a menu item.
 static void setMenuItemChecked(
     HMENU menu,
     UINT item,
@@ -56,6 +58,7 @@ static void setMenuItemChecked(
     SetMenuItemInfo(menu, item, FALSE, &mii);
 }
 
+// showTextInputDialogProc: dialog proc.
 static INT_PTR CALLBACK showTextInputDialogProc(
     HWND hWnd,
     UINT uMsg,
@@ -64,6 +67,7 @@ static INT_PTR CALLBACK showTextInputDialogProc(
 {
     switch (uMsg) {
     case WM_INITDIALOG:
+        // Setting up.
         SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)lParam);
         {
             WCHAR** pText = (WCHAR**)lParam;
@@ -72,7 +76,9 @@ static INT_PTR CALLBACK showTextInputDialogProc(
             }
         }
         return TRUE;
+        
     case WM_COMMAND:
+        // Respond to button press.
         switch (LOWORD(wParam)) {
         case IDOK:
             {
@@ -91,6 +97,7 @@ static INT_PTR CALLBACK showTextInputDialogProc(
                 EndDialog(hWnd, IDOK);
             }
             break;
+            
         case IDCANCEL:
             {
                 WCHAR** pText = (WCHAR**)GetWindowLongPtr(hWnd, GWLP_USERDATA);
@@ -102,11 +109,13 @@ static INT_PTR CALLBACK showTextInputDialogProc(
             break;
         }
         return TRUE;
+        
     default:
         return FALSE;
     }
 }
 
+// showTextInputDialog: prompt with a text field.
 static WCHAR* showTextInputDialog(HWND hWnd, WCHAR* src)
 {
     WCHAR* text = src;
@@ -116,7 +125,7 @@ static WCHAR* showTextInputDialog(HWND hWnd, WCHAR* src)
     return text;
 }
 
-//  trayBrowserINIHandler
+// trayBrowserINIHandler
 //   Called for each config line.
 static int trayBrowserINIHandler(
     void* user, const char* section,
@@ -150,8 +159,8 @@ class TrayBrowser
 
     void openURL(const WCHAR* url);
     void openURLDialog();
-    void togglePin();
-    void toggleShow();
+    void pinWindow(BOOL pinned);
+    void showWindow();
 
 public:
     TrayBrowser(int id);
@@ -166,6 +175,7 @@ public:
     void doCommand(WPARAM wParam);
 };
 
+// TrayBrowser(id):
 TrayBrowser::TrayBrowser(int id)
 {
     _iconId = id;
@@ -181,12 +191,12 @@ TrayBrowser::TrayBrowser(int id)
     }
 }
 
+// loadIni(path): load a .ini file.
 void TrayBrowser::loadIni(const WCHAR* path)
 {
-    if (logfp) fwprintf(logfp, L" loadIni: path=%s\n", path);
+    if (logfp) fwprintf(logfp, L"loadIni: path=%s\n", path);
 
-    // Open the .ini file.
-    {
+    if (_hBookmarks != NULL) {
         FILE* fp = NULL;
         if (_wfopen_s(&fp, path, L"r") == 0) {
             ini_parse_file(fp, trayBrowserINIHandler, _hBookmarks);
@@ -195,14 +205,15 @@ void TrayBrowser::loadIni(const WCHAR* path)
     }
 }
 
+// saveIni(path): save a .ini file.
 void TrayBrowser::saveIni(const WCHAR* path)
 {
-    if (logfp) fwprintf(logfp, L" saveIni: path=%s\n", path);
+    if (logfp) fwprintf(logfp, L"saveIni: path=%s\n", path);
 
-    // Open the .ini file.
     if (_hBookmarks != NULL) {
         FILE* fp = NULL;
         if (_wfopen_s(&fp, path, L"w") == 0) {
+            // Write bookmark items.
             fwprintf(fp, L"[bookmarks]\n");
             for (int i = 0; i < GetMenuItemCount(_hBookmarks); i++) {
                 WCHAR value[MAX_URL_LENGTH];
@@ -216,9 +227,11 @@ void TrayBrowser::saveIni(const WCHAR* path)
     }
 }
 
+// initialize: set up a browser object.
 void TrayBrowser::initialize(HWND hWnd, RECT* rect)
 {
     HRESULT hr;
+    if (logfp) fwprintf(logfp, L"initialize\n");
 
     _hWnd = hWnd;
     _site = new AXClientSite(hWnd);
@@ -257,6 +270,7 @@ void TrayBrowser::initialize(HWND hWnd, RECT* rect)
     }
 }
 
+// unInitialize: tear down a browser object.
 void TrayBrowser::unInitialize()
 {
     if (_browser2) {
@@ -289,6 +303,7 @@ void TrayBrowser::unInitialize()
     }
 };
 
+// registerIcon: create a SysTray icon.
 void TrayBrowser::registerIcon()
 {
     NOTIFYICONDATA nidata = {0};
@@ -303,6 +318,7 @@ void TrayBrowser::registerIcon()
     Shell_NotifyIcon(NIM_ADD, &nidata);
 }
 
+// unregisterIcon: destroy a SysTray icon.
 void TrayBrowser::unregisterIcon()
 {
     NOTIFYICONDATA nidata = {0};
@@ -312,6 +328,7 @@ void TrayBrowser::unregisterIcon()
     Shell_NotifyIcon(NIM_DELETE, &nidata);
 }
 
+// resize: resize the window.
 void TrayBrowser::resize(RECT* rect)
 {
     if (_ole != NULL) {
@@ -325,10 +342,12 @@ void TrayBrowser::resize(RECT* rect)
     }
 }
 
+// handleIconUI: UI handing.
 void TrayBrowser::handleIconUI(LPARAM lParam, POINT pt)
 {
     switch (lParam) {
     case WM_LBUTTONDBLCLK:
+        // Double click - choose the default item.
         if (_hMenu != NULL) {
             UINT item = GetMenuDefaultItem(_hMenu, FALSE, 0);
             SendMessage(_hWnd, WM_COMMAND, MAKEWPARAM(item, 1), NULL);
@@ -336,10 +355,12 @@ void TrayBrowser::handleIconUI(LPARAM lParam, POINT pt)
         break;
         
     case WM_LBUTTONUP:
+        // Single click - show the window.
         SendMessage(_hWnd, WM_COMMAND, MAKEWPARAM(IDM_SHOW, 1), NULL);
         break;
         
     case WM_RBUTTONUP:
+        // Right click - open a popup menu.
         if (_hMenu != NULL) {
             TrackPopupMenu(_hMenu, TPM_LEFTALIGN, 
                            pt.x, pt.y, 0, _hWnd, NULL);
@@ -349,6 +370,7 @@ void TrayBrowser::handleIconUI(LPARAM lParam, POINT pt)
     }
 }
 
+// doCommand: respond to a menu choice.
 void TrayBrowser::doCommand(WPARAM wParam)
 {
     UINT uid = LOWORD(wParam);
@@ -356,15 +378,19 @@ void TrayBrowser::doCommand(WPARAM wParam)
     case IDM_EXIT:
         DestroyWindow(_hWnd);
         break;
+        
     case IDM_OPEN:
         openURLDialog();
         break;
+        
     case IDM_PIN:
-        togglePin();
+        pinWindow(!getMenuItemChecked(_hMenu, IDM_PIN));
         break;
+        
     case IDM_SHOW:
-        toggleShow();
+        showWindow();
         break;
+        
     default:
         if (IDM_RECENT <= uid) {
             WCHAR value[MAX_URL_LENGTH];
@@ -377,8 +403,33 @@ void TrayBrowser::doCommand(WPARAM wParam)
     }
 }
 
+// openURLDialog(): open a url input dialog.
+void TrayBrowser::openURLDialog()
+{
+    if (_modal) return;
+    if (logfp) fwprintf(logfp, L"openURLDialog\n");
+    
+    _modal = TRUE;
+    if (_browser2 != NULL) {
+        BSTR bstrSrc = NULL;
+        _browser2->get_LocationURL(&bstrSrc);
+        if (bstrSrc != NULL) {
+            WCHAR* url = showTextInputDialog(_hWnd, (WCHAR*)bstrSrc);;
+            if (url != NULL) {
+                openURL(url);
+                free(url);
+            }
+            SysFreeString(bstrSrc);
+        }
+    }
+    _modal = FALSE;
+}
+
+// openURL(url): navigate to URL.
 void TrayBrowser::openURL(const WCHAR* url)
 {
+    if (logfp) fwprintf(logfp, L"openURL: url=%s\n", url);
+    
     if (_browser2 != NULL) {
         BSTR bstrUrl = SysAllocString(url);
         if (bstrUrl != NULL) {
@@ -386,12 +437,14 @@ void TrayBrowser::openURL(const WCHAR* url)
             SysFreeString(bstrUrl);
         }
     }
-    
+
+    // Get a new item ID.
     UINT maxuid = IDM_RECENT;
     for (int i = 0; i < GetMenuItemCount(_hBookmarks); i++) {
         UINT uid = GetMenuItemID(_hBookmarks, i);
         maxuid = (maxuid < uid)? uid : maxuid;
     }
+    // Remove a previous item.
     for (int i = 0; i < GetMenuItemCount(_hBookmarks); i++) {
         WCHAR value[MAX_URL_LENGTH];
         if (GetMenuString(_hBookmarks, i, value, _countof(value), MF_BYPOSITION)) {
@@ -404,38 +457,18 @@ void TrayBrowser::openURL(const WCHAR* url)
     InsertMenu(_hBookmarks, 0, MF_BYPOSITION | MF_STRING, maxuid+1, url);
  }
 
-void TrayBrowser::openURLDialog()
+// pinWindow(pinned): set window pinning.
+void TrayBrowser::pinWindow(BOOL pinned)
 {
-    if (_modal) return;
-    
-    _modal = TRUE;
-    if (_browser2 != NULL) {
-        BSTR bstrSrc = NULL;
-        _browser2->get_LocationURL(&bstrSrc);
-        if (bstrSrc != NULL) {
-            WCHAR* url = showTextInputDialog(_hWnd, (WCHAR*)bstrSrc);;
-            if (url != NULL) {
-                if (logfp) fwprintf(logfp, L" openURL: url=%s\n", url);
-                openURL(url);
-                free(url);
-            }
-            SysFreeString(bstrSrc);
-        }
-    }
-    _modal = FALSE;
-}
-
-void TrayBrowser::togglePin()
-{
-    BOOL pinned = getMenuItemChecked(_hMenu, IDM_PIN);
-    pinned = !pinned;
-    if (logfp) fwprintf(logfp, L" togglePin: %d\n", pinned);
+    if (logfp) fwprintf(logfp, L"pinWindow: pinned=%d\n", pinned);
     setMenuItemChecked(_hMenu, IDM_PIN, pinned);
-    
+
+    // Bring the window to the topmost.
     HWND hwndAfter = (pinned)? HWND_TOPMOST : HWND_NOTOPMOST;
     SetWindowPos(_hWnd, hwndAfter, 0,0,0,0, 
                  (SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE));
-    
+
+    // Change the window style.
     DWORD exStyle = GetWindowLongPtr(_hWnd, GWL_EXSTYLE);
     if (pinned) {
         exStyle |= WS_EX_TOOLWINDOW;
@@ -445,9 +478,11 @@ void TrayBrowser::togglePin()
     SetWindowLongPtr(_hWnd, GWL_EXSTYLE, exStyle);
 }
 
-void TrayBrowser::toggleShow()
+// showWindow(): show the window.
+void TrayBrowser::showWindow()
 {
     if (_modal) return;
+    if (logfp) fwprintf(logfp, L"showWindow\n");
 
     if (!IsWindowVisible(_hWnd)) {
         ShowWindow(_hWnd, SW_SHOWNORMAL);
