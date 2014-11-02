@@ -19,7 +19,6 @@
 const LPCWSTR TRAYBROWSER_NAME = L"TrayBrowser";
 const LPCWSTR TRAYBROWSER_WNDCLASS = L"TrayBrowserClass";
 const LPCWSTR TASKBAR_CREATED = L"TaskbarCreated";
-const UINT MAX_URL_CHARS = 1024;
 const UINT WM_NOTIFY_ICON = WM_USER+1;
 static UINT WM_TASKBAR_CREATED;
 static FILE* logfp = NULL;      // logging
@@ -62,9 +61,9 @@ static INT_PTR CALLBACK showTextInputDialogProc(
     case WM_INITDIALOG:
         SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)lParam);
         {
-            WCHAR* text = (WCHAR*)lParam;
-            if (text != NULL) {
-                SetDlgItemText(hWnd, IDC_EDIT_URL, text);
+            WCHAR** pText = (WCHAR**)lParam;
+            if (pText != NULL && *pText != NULL) {
+                SetDlgItemText(hWnd, IDC_EDIT_URL, *pText);
             }
         }
         return TRUE;
@@ -72,15 +71,28 @@ static INT_PTR CALLBACK showTextInputDialogProc(
         switch (LOWORD(wParam)) {
         case IDOK:
             {
-                WCHAR* text = (WCHAR*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-                if (text != NULL) {
-                    UINT n = GetDlgItemText(hWnd, IDC_EDIT_URL, text, MAX_URL_CHARS-1);
-                    text[n] = L'\0';
+                WCHAR** pText = (WCHAR**)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+                if (pText != NULL) {
+                    HWND item = GetDlgItem(hWnd, IDC_EDIT_URL);
+                    if (item != NULL) {
+                        int n = GetWindowTextLength(item);
+                        WCHAR* text = (WCHAR*) calloc(n+1, sizeof(WCHAR));
+                        if (text != NULL) {
+                            GetWindowText(item, text, n+1);
+                            *pText = text;
+                        }
+                    }
                 }
                 EndDialog(hWnd, IDOK);
             }
             break;
         case IDCANCEL:
+            {
+                WCHAR** pText = (WCHAR**)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+                if (pText != NULL) {
+                    *pText = NULL;
+                }
+            }
             EndDialog(hWnd, IDCANCEL);
             break;
         }
@@ -92,15 +104,10 @@ static INT_PTR CALLBACK showTextInputDialogProc(
 
 static WCHAR* showTextInputDialog(HWND hWnd, WCHAR* src)
 {
-    WCHAR* text = (WCHAR*)calloc(MAX_URL_CHARS, sizeof(WCHAR));
-    StringCchCopy(text, MAX_URL_CHARS, src);
-    LPARAM result = DialogBoxParam(
+    WCHAR* text = src;
+    DialogBoxParam(
         NULL, MAKEINTRESOURCE(IDD_TEXTINPUT),
-        hWnd, showTextInputDialogProc, (LPARAM)text);
-    if (result != IDOK) {
-        free(text);
-        return NULL;
-    }
+        hWnd, showTextInputDialogProc, (LPARAM)&text);
     return text;
 }
 
