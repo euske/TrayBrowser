@@ -8,15 +8,19 @@
 #include <ExDisp.h>
 #include <OleAuto.h>
 #include <Mshtmhst.h>
+#include <Shlwapi.h>
 #include "Resource.h"
 #include "AXClientSite.h"
+#include "ini.h"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "oleaut32.lib")
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "shlwapi.lib")
 
 const LPCWSTR TRAYBROWSER_NAME = L"TrayBrowser";
+const LPCWSTR TRAYBROWSER_INI = L"TrayBrowser.ini";
 const LPCWSTR TRAYBROWSER_WNDCLASS = L"TrayBrowserClass";
 const LPCWSTR TASKBAR_CREATED = L"TaskbarCreated";
 const UINT WM_NOTIFY_ICON = WM_USER+1;
@@ -111,6 +115,17 @@ static WCHAR* showTextInputDialog(HWND hWnd, WCHAR* src)
     return text;
 }
 
+//  trayBrowserINIHandler
+//   Called for each config line.
+static int trayBrowserINIHandler(
+    void* user, const char* section,
+    const char* name, const char* value)
+{
+    fprintf(stderr, "section=%s, name=%s, value=%s\n", section, name, value);
+
+    return 1;
+}
+
 
 //  TrayBrowser
 //
@@ -125,12 +140,14 @@ class TrayBrowser
     IStorage* _storage;
     IOleObject* _ole;
     IWebBrowser2* _browser2;
+
     void openURL();
     void togglePin();
     void toggleShow();
 
 public:
     TrayBrowser(int id);
+    void loadIni(const WCHAR* path);
     void initialize(HWND hWnd, RECT* rect);
     void unInitialize();
     void registerIcon();
@@ -149,6 +166,20 @@ TrayBrowser::TrayBrowser(int id)
         _hMenu = GetSubMenu(menu, 0);
         if (_hMenu != NULL) {
             SetMenuDefaultItem(_hMenu, IDM_OPEN, FALSE);
+        }
+    }
+}
+
+void TrayBrowser::loadIni(const WCHAR* path)
+{
+    if (logfp) fwprintf(logfp, L" loadIni: path=%s\n", path);
+
+    // Open the .ini file.
+    {
+        FILE* fp = NULL;
+        if (_wfopen_s(&fp, path, L"r") == 0) {
+            ini_parse_file(fp, trayBrowserINIHandler, this);
+            fclose(fp);
         }
     }
 }
@@ -479,6 +510,13 @@ int TrayBrowserMain(
 
     // Create a TrayBrowser object.
     TrayBrowser* browser = new TrayBrowser(1);
+    {
+        WCHAR path[MAX_PATH];
+        GetModuleFileName(hInstance, path, _countof(path));
+        PathRemoveFileSpec(path);
+        PathAppend(path, TRAYBROWSER_INI);
+        browser->loadIni(path);
+    }
     
     // Create a main window.
     HWND hWnd = CreateWindow(
