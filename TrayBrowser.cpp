@@ -25,6 +25,7 @@ const LPCWSTR TRAYBROWSER_INI = L"TrayBrowser.ini";
 const LPCWSTR TRAYBROWSER_WNDCLASS = L"TrayBrowserClass";
 const LPCWSTR TASKBAR_CREATED = L"TaskbarCreated";
 const UINT WM_NOTIFY_ICON = WM_USER+1;
+const LPCSTR INI_SECTION_BOOKMARKS = "bookmarks";
 static UINT WM_TASKBAR_CREATED;
 static FILE* logfp = NULL;      // logging
 
@@ -133,11 +134,13 @@ static int trayBrowserINIHandler(
 {
     fprintf(stderr, " section=%s, name=%s, value=%s\n", section, name, value);
 
-    wchar_t wvalue[MAX_URL_LENGTH];
-    mbstowcs_s(NULL, wvalue, _countof(wvalue), value, _TRUNCATE);
-    HMENU menu = (HMENU)user;
-    UINT uid = IDM_RECENT + GetMenuItemCount(menu);
-    AppendMenu(menu, MF_STRING, uid, wvalue);
+    if (stricmp(section, INI_SECTION_BOOKMARKS) == 0) {
+        wchar_t wvalue[MAX_URL_LENGTH];
+        mbstowcs_s(NULL, wvalue, _countof(wvalue), value, _TRUNCATE);
+        HMENU menu = (HMENU)user;
+        UINT uid = IDM_RECENT + GetMenuItemCount(menu);
+        AppendMenu(menu, MF_STRING, uid, wvalue);
+    }
     return 1;
 }
 
@@ -214,14 +217,16 @@ void TrayBrowser::saveIni(const WCHAR* path)
         FILE* fp = NULL;
         if (_wfopen_s(&fp, path, L"w") == 0) {
             // Write bookmark items.
-            fwprintf(fp, L"[bookmarks]\n");
+            fprintf(fp, "[%s]\n", INI_SECTION_BOOKMARKS);
             for (int i = 0; i < GetMenuItemCount(_hBookmarks); i++) {
-                WCHAR value[MAX_URL_LENGTH];
-                GetMenuString(_hBookmarks, i, value, _countof(value),
+                WCHAR wvalue[MAX_URL_LENGTH];
+                char value[MAX_URL_LENGTH*2];
+                GetMenuString(_hBookmarks, i, wvalue, _countof(wvalue),
                               MF_BYPOSITION);
-                fwprintf(fp, L"url%d = %s\n", i, value);
+                wcstombs_s(NULL, value, _countof(value), wvalue, _TRUNCATE);
+                fprintf(fp, "url%d = %s\n", i, value);
             }
-            fwprintf(fp, L"\n");
+            fprintf(fp, "\n");
             fclose(fp);
         }
     }
