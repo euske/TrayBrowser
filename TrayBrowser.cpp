@@ -366,8 +366,10 @@ void TrayBrowser::handleIconUI(LPARAM lParam, POINT pt)
         
     case WM_RBUTTONUP:
         // Right click - open a popup menu.
+        SetForegroundWindow(_hWnd);
         if (_hMenu != NULL) {
-            TrackPopupMenu(_hMenu, TPM_LEFTALIGN, 
+            TrackPopupMenu(_hMenu,
+                           TPM_LEFTALIGN | TPM_RIGHTBUTTON, 
                            pt.x, pt.y, 0, _hWnd, NULL);
         }
         PostMessage(_hWnd, WM_NULL, 0, 0);
