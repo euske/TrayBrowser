@@ -470,6 +470,9 @@ void TrayBrowser::pinWindow(BOOL pinned)
     if (logfp) fwprintf(logfp, L"pinWindow: pinned=%d\n", pinned);
     setMenuItemChecked(_hMenu, IDM_PIN, pinned);
 
+    BOOL isVisible = IsWindowVisible(_hWnd);
+    ShowWindow(_hWnd, SW_HIDE);
+
     // Bring the window to the topmost.
     HWND hwndAfter = (pinned)? HWND_TOPMOST : HWND_NOTOPMOST;
     SetWindowPos(_hWnd, hwndAfter, 0,0,0,0, 
@@ -483,6 +486,7 @@ void TrayBrowser::pinWindow(BOOL pinned)
         exStyle &= ~WS_EX_TOOLWINDOW;
     }
     SetWindowLongPtr(_hWnd, GWL_EXSTYLE, exStyle);
+    ShowWindow(_hWnd, isVisible? SW_SHOW : SW_HIDE);
 }
 
 // showWindow(): show the window.
