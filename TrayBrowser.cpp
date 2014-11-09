@@ -293,6 +293,7 @@ void TrayBrowser::unInitialize()
             iib->InPlaceDeactivate();
             iib->Release();
         }
+        _ole->Close(0);
         _ole->Release();
         _ole = NULL;
     }
@@ -355,13 +356,13 @@ void TrayBrowser::handleIconUI(LPARAM lParam, POINT pt)
         // Double click - choose the default item.
         if (_hMenu != NULL) {
             UINT item = GetMenuDefaultItem(_hMenu, FALSE, 0);
-            SendMessage(_hWnd, WM_COMMAND, MAKEWPARAM(item, 1), NULL);
+            PostMessage(_hWnd, WM_COMMAND, MAKEWPARAM(item, 1), NULL);
         }
         break;
         
     case WM_LBUTTONUP:
         // Single click - show the window.
-        SendMessage(_hWnd, WM_COMMAND, MAKEWPARAM(IDM_SHOW, 1), NULL);
+        PostMessage(_hWnd, WM_COMMAND, MAKEWPARAM(IDM_SHOW, 1), NULL);
         break;
         
     case WM_RBUTTONUP:
