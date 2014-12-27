@@ -2,6 +2,7 @@
 // 
 #include <Windows.h>
 #include <ExDisp.h>
+#include <ExDispId.h>
 #include <OleIdl.h>
 #include "AXClientSite.h"
 
@@ -12,6 +13,7 @@ AXClientSite::AXClientSite(HWND hWnd)
 {
     _refCount = 0;
     _hWnd = hWnd;
+    AddRef();
 }
 
 // IUnknown methods
@@ -35,6 +37,27 @@ STDMETHODIMP AXClientSite::QueryInterface(REFIID iid, void** ppvObject)
     }
 
     AddRef();
+    return S_OK;
+}
+
+// IDispatch methods
+STDMETHODIMP AXClientSite::Invoke(
+    DISPID dispIdMember,
+    REFIID riid,
+    LCID lcid,
+    WORD wFlags,
+    DISPPARAMS* pDispParams,
+    VARIANT* pVarResult,
+    EXCEPINFO* pExcepInfo,
+    UINT* puArgErr)
+{
+    if (dispIdMember == DISPID_TITLECHANGE) {
+        if (pDispParams->cArgs == 1 &&
+            pDispParams->rgvarg[0].vt == VT_BSTR) {
+            BSTR title = pDispParams->rgvarg[0].bstrVal;
+            SetWindowText(_hWnd, title);
+        }
+    }
     return S_OK;
 }
 

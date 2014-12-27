@@ -23,8 +23,12 @@ public:
     STDMETHODIMP QueryInterface(REFIID iid, void**ppvObject);
     STDMETHODIMP_(ULONG) AddRef()
         { _refCount++; return _refCount; }
-    STDMETHODIMP_(ULONG) Release()
-        { _refCount--; return _refCount; }
+    STDMETHODIMP_(ULONG) Release() {
+        _refCount--;
+        if (_refCount) return _refCount;
+        delete this;
+        return 0;
+    }
     
     // IDispatch methods
     STDMETHODIMP GetTypeInfoCount(UINT*)
@@ -33,8 +37,7 @@ public:
         { return E_NOTIMPL; }
     STDMETHODIMP GetIDsOfNames(REFIID, LPOLESTR*, UINT, LCID, DISPID*)
         { return E_NOTIMPL; }
-    STDMETHODIMP Invoke(DISPID, REFIID, LCID, WORD, DISPPARAMS*, VARIANT*, EXCEPINFO*, UINT*)
-        { return E_NOTIMPL; }
+    STDMETHODIMP Invoke(DISPID, REFIID, LCID, WORD, DISPPARAMS*, VARIANT*, EXCEPINFO*, UINT*);
     
     // IOleClientSite methods
     STDMETHODIMP GetMoniker(DWORD, DWORD, IMoniker** ppmk)

@@ -6,6 +6,7 @@
 #include <Windows.h>
 #include <StrSafe.h>
 #include <ExDisp.h>
+#include <ExDispId.h>
 #include <OleAuto.h>
 #include <Mshtmhst.h>
 #include <Shlwapi.h>
@@ -159,6 +160,8 @@ class TrayBrowser
     IStorage* _storage;
     IOleObject* _ole;
     IWebBrowser2* _browser2;
+    IConnectionPoint* _connection;
+    DWORD _cookie;
 
     void openURL(const WCHAR* url);
     void openURLDialog();
@@ -272,13 +275,35 @@ void TrayBrowser::initialize(HWND hWnd, RECT* rect)
             IID_IWebBrowser2,
             (void**)&_browser2);
         if (logfp) fwprintf(logfp, L" browser2=%p\n", _browser2);
+
+        {
+            IConnectionPointContainer* cpc;
+            hr = _browser2->QueryInterface(
+                IID_IConnectionPointContainer,
+                (void**)&cpc);
+            if (cpc != NULL) {
+                hr = cpc->FindConnectionPoint(DIID_DWebBrowserEvents2,
+                                              &_connection);
+                if (_connection != NULL) {
+                    _connection->Advise((IDispatch*)_site, &_cookie);
+                    if (logfp) fwprintf(logfp, L" connection=%p\n", _connection);
+                }
+                cpc->Release();
+            }
+        }
     }
 }
 
 // unInitialize: tear down a browser object.
 void TrayBrowser::unInitialize()
 {
-    if (_browser2) {
+    if (_connection != NULL) {
+        _connection->Unadvise(_cookie);
+        _connection->Release();
+        _connection = NULL;
+    }
+    
+    if (_browser2 != NULL) {
         _browser2->Quit();
         _browser2->Release();
         _browser2 = NULL;
@@ -305,7 +330,6 @@ void TrayBrowser::unInitialize()
 
     if (_site != NULL) {
         _site->Release();
-        delete _site;
     }
 };
 
