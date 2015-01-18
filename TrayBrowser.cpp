@@ -25,10 +25,24 @@ const LPCWSTR TRAYBROWSER_NAME = L"TrayBrowser";
 const LPCWSTR TRAYBROWSER_INI = L"TrayBrowser.ini";
 const LPCWSTR TRAYBROWSER_WNDCLASS = L"TrayBrowserClass";
 const LPCWSTR TASKBAR_CREATED = L"TaskbarCreated";
-const UINT WM_NOTIFY_ICON = WM_USER+1;
+const UINT WM_NOTIFY_ICON = WM_APP+1;
+const UINT WM_UNINITIALIZE = WM_APP+2;
 const LPCSTR INI_SECTION_BOOKMARKS = "bookmarks";
 static UINT WM_TASKBAR_CREATED;
+
 static FILE* logfp = NULL;      // logging
+static void log(LPCWSTR fmt, ...)
+{
+    if (logfp == NULL) return;
+    WCHAR buf[1024];
+    va_list args;
+    va_start(args, fmt);
+    StringCchVPrintf(buf, _countof(buf)-1, fmt, args);
+    va_end(args);
+    buf[1023] = L'\0';
+    fwprintf(logfp, L"%s\n", buf);
+    fflush(logfp);
+}
 
 // getMenuItemChecked: return TRUE if the item is checked.
 static BOOL getMenuItemChecked(
@@ -167,9 +181,10 @@ class TrayBrowser
     void openURLDialog();
     void pinWindow(BOOL pinned);
     void showWindow();
-
+    
 public:
     TrayBrowser(int id);
+    ~TrayBrowser();
     void loadIni(const WCHAR* path);
     void saveIni(const WCHAR* path);
     void initialize(HWND hWnd, RECT* rect);
@@ -197,10 +212,18 @@ TrayBrowser::TrayBrowser(int id)
     }
 }
 
+TrayBrowser::~TrayBrowser()
+{
+    if (_site != NULL) {
+        _site->Release();
+        _site = NULL;
+    }
+}
+
 // loadIni(path): load a .ini file.
 void TrayBrowser::loadIni(const WCHAR* path)
 {
-    if (logfp) fwprintf(logfp, L"loadIni: path=%s\n", path);
+    log(L"loadIni: path=%s", path);
 
     if (_hBookmarks != NULL) {
         FILE* fp = NULL;
@@ -214,7 +237,7 @@ void TrayBrowser::loadIni(const WCHAR* path)
 // saveIni(path): save a .ini file.
 void TrayBrowser::saveIni(const WCHAR* path)
 {
-    if (logfp) fwprintf(logfp, L"saveIni: path=%s\n", path);
+    log(L"saveIni: path=%s", path);
 
     if (_hBookmarks != NULL) {
         FILE* fp = NULL;
@@ -239,18 +262,18 @@ void TrayBrowser::saveIni(const WCHAR* path)
 void TrayBrowser::initialize(HWND hWnd, RECT* rect)
 {
     HRESULT hr;
-    if (logfp) fwprintf(logfp, L"initialize\n");
+    log(L"initialize");
 
     _hWnd = hWnd;
     _site = new AXClientSite(hWnd);
-    if (logfp) fwprintf(logfp, L" site=%p\n", _site);
+    log(L" site=%p", _site);
 
     hr = StgCreateDocfile(
         NULL,
         (STGM_READWRITE | STGM_SHARE_EXCLUSIVE |
          STGM_CREATE | STGM_DIRECT),
         0, &_storage);
-    if (logfp) fwprintf(logfp, L" storage=%p\n", _storage);
+    log(L" storage=%p", _storage);
 
     if (_site != NULL && _storage != NULL) {
         hr = OleCreate(
@@ -261,7 +284,7 @@ void TrayBrowser::initialize(HWND hWnd, RECT* rect)
             _site,
             _storage,
             (void**)&_ole);
-        if (logfp) fwprintf(logfp, L" ole=%p\n", _ole);
+        log(L" ole=%p", _ole);
     }
 
     if (_ole != NULL) {
@@ -274,7 +297,7 @@ void TrayBrowser::initialize(HWND hWnd, RECT* rect)
         hr = _ole->QueryInterface(
             IID_IWebBrowser2,
             (void**)&_browser2);
-        if (logfp) fwprintf(logfp, L" browser2=%p\n", _browser2);
+        log(L" browser2=%p", _browser2);
 
         {
             IConnectionPointContainer* cpc;
@@ -286,7 +309,7 @@ void TrayBrowser::initialize(HWND hWnd, RECT* rect)
                                               &_connection);
                 if (_connection != NULL) {
                     _connection->Advise((IDispatch*)_site, &_cookie);
-                    if (logfp) fwprintf(logfp, L" connection=%p\n", _connection);
+                    log(L" connection=%p", _connection);
                 }
                 cpc->Release();
             }
@@ -297,6 +320,8 @@ void TrayBrowser::initialize(HWND hWnd, RECT* rect)
 // unInitialize: tear down a browser object.
 void TrayBrowser::unInitialize()
 {
+    log(L"uninitialize");
+    
     if (_connection != NULL) {
         _connection->Unadvise(_cookie);
         _connection->Release();
@@ -318,7 +343,7 @@ void TrayBrowser::unInitialize()
             iib->InPlaceDeactivate();
             iib->Release();
         }
-        _ole->Close(0);
+        _ole->Close(OLECLOSE_NOSAVE);
         _ole->Release();
         _ole = NULL;
     }
@@ -326,10 +351,6 @@ void TrayBrowser::unInitialize()
     if (_storage != NULL) {
         _storage->Release();
         _storage = NULL;
-    }
-
-    if (_site != NULL) {
-        _site->Release();
     }
 };
 
@@ -408,6 +429,7 @@ void TrayBrowser::doCommand(WPARAM wParam)
     UINT uid = LOWORD(wParam);
     switch (uid) {
     case IDM_EXIT:
+        SendMessage(_hWnd, WM_UNINITIALIZE, 0, 0);
         DestroyWindow(_hWnd);
         break;
         
@@ -439,7 +461,7 @@ void TrayBrowser::doCommand(WPARAM wParam)
 void TrayBrowser::openURLDialog()
 {
     if (_modal) return;
-    if (logfp) fwprintf(logfp, L"openURLDialog\n");
+    log(L"openURLDialog");
     
     _modal = TRUE;
     if (_browser2 != NULL) {
@@ -460,7 +482,7 @@ void TrayBrowser::openURLDialog()
 // openURL(url): navigate to URL.
 void TrayBrowser::openURL(const WCHAR* url)
 {
-    if (logfp) fwprintf(logfp, L"openURL: url=%s\n", url);
+    log(L"openURL: url=%s", url);
     
     if (_browser2 != NULL) {
         BSTR bstrUrl = SysAllocString(url);
@@ -492,7 +514,7 @@ void TrayBrowser::openURL(const WCHAR* url)
 // pinWindow(pinned): set window pinning.
 void TrayBrowser::pinWindow(BOOL pinned)
 {
-    if (logfp) fwprintf(logfp, L"pinWindow: pinned=%d\n", pinned);
+    log(L"pinWindow: pinned=%d", pinned);
     setMenuItemChecked(_hMenu, IDM_PIN, pinned);
 
     BOOL isVisible = IsWindowVisible(_hWnd);
@@ -518,7 +540,7 @@ void TrayBrowser::pinWindow(BOOL pinned)
 void TrayBrowser::showWindow()
 {
     if (_modal) return;
-    if (logfp) fwprintf(logfp, L"showWindow\n");
+    log(L"showWindow");
 
     if (!IsWindowVisible(_hWnd)) {
         ShowWindow(_hWnd, SW_SHOWNORMAL);
@@ -535,9 +557,13 @@ static LRESULT CALLBACK trayBrowserWndProc(
     WPARAM wParam,
     LPARAM lParam)
 {
-    //fwprintf(logfp, L"msg: %x, hWnd=%p, wParam=%p\n", uMsg, hWnd, wParam);
+    log(L"msg: %x, hWnd=%p, wParam=%p", uMsg, hWnd, wParam);
 
     switch (uMsg) {
+    case WM_DESTROY:
+	PostQuitMessage(0);
+	return FALSE;
+        
     case WM_CREATE:
     {
         // Initialization.
@@ -553,7 +579,7 @@ static LRESULT CALLBACK trayBrowserWndProc(
 	return FALSE;
     }
     
-    case WM_DESTROY:
+    case WM_UNINITIALIZE:
     {
         // Clean up.
 	LONG_PTR lp = GetWindowLongPtr(hWnd, GWLP_USERDATA);
@@ -562,7 +588,6 @@ static LRESULT CALLBACK trayBrowserWndProc(
             self->unregisterIcon();
             self->unInitialize();
         }
-	PostQuitMessage(0);
 	return FALSE;
     }
 
@@ -681,8 +706,10 @@ int TrayBrowserMain(
 
     // Clean up.
     browser->saveIni(path);
-    delete browser;
+    //delete browser;  // This makes it crash *OCCASIONALLY* :'(
 
+    OleUninitialize();
+    
     return (int)msg.wParam;
 }
 
@@ -696,7 +723,9 @@ int WinMain(HINSTANCE hInstance,
 {
     int argc;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    //_wfopen_s(&logfp, L"log.txt", L"a");
+#ifdef DEBUG
+    _wfopen_s(&logfp, L"log.txt", L"a");
+#endif
     return TrayBrowserMain(hInstance, hPrevInstance, nCmdShow, argc, argv);
 }
 #else

@@ -9,7 +9,7 @@ How to Build
  1. Install Windows SDK (v7.1 or newer).
  2. Launch Windows SDL 7.1 Command Prompt.
  3. Type `nmake`.
- 4. Install TrayBrowser.reg.
+ 4. Install TrayBrowser.reg. (You'd need to be Administrator.)
  5. Copy TrayBrowser.exe to somewhere.
 
 **Caution**
