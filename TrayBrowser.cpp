@@ -434,6 +434,7 @@ void TrayBrowser::doCommand(WPARAM wParam)
         break;
         
     case IDM_OPEN:
+        SetForegroundWindow(_hWnd);
         openURLDialog();
         break;
         
